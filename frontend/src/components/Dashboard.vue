@@ -186,6 +186,21 @@ const startPractice = async () => {
 
 const currentExercise = () => exercises.value[currentExerciseIndex.value] || null;
 
+// Text-to-speech function to read sentences
+const speakSentence = (text) => {
+  if ('speechSynthesis' in window) {
+    // Cancel any ongoing speech
+    window.speechSynthesis.cancel();
+    
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = 'en-US';
+    utterance.rate = 0.9; // Slightly slower for clarity
+    utterance.pitch = 1;
+    
+    window.speechSynthesis.speak(utterance);
+  }
+};
+
 const selectOption = (option) => {
   if (showResult.value) return;
   selectedOption.value = option;
@@ -217,20 +232,37 @@ const nextExercise = () => {
   if (currentExerciseIndex.value < exercises.value.length - 1) {
     currentExerciseIndex.value++;
     selectedOption.value = '';
+    practiceAnswer.value = '';
     showResult.value = false;
   } else {
     currentView.value = 'results';
   }
 };
 
+// Repeat TTS for current sentence
+const repeatSentence = () => {
+  const exercise = currentExercise();
+  if (exercise) {
+    const completeSentence = exercise.sentence.replace('____', exercise.answer);
+    speakSentence(completeSentence);
+  }
+};
+
 const submitWrittenAnswer = () => {
-  if (!practiceAnswer.value.trim()) return;
+  if (!practiceAnswer.value.trim() || showResult.value) return;
   const exercise = currentExercise();
   isCorrect.value = practiceAnswer.value.trim().toLowerCase() === exercise.answer.toLowerCase();
   score.value.total++;
-  if (isCorrect.value) score.value.correct++;
+  if (isCorrect.value) {
+    score.value.correct++;
+  } else {
+    failedExercises.value.push(exercise);
+  }
   showResult.value = true;
-  practiceAnswer.value = '';
+  
+  // Read the complete sentence with the correct answer
+  const completeSentence = exercise.sentence.replace('____', exercise.answer);
+  speakSentence(completeSentence);
 };
 
 const exampleJson = `[
@@ -446,24 +478,50 @@ const copyExampleJson = async () => {
           </div>
           <div class="practice-card">
             <p class="practice-sentence">{{ currentExercise().sentence }}</p>
-            <div class="options-grid">
-              <button 
-                v-for="(option, idx) in currentExercise().options" 
-                :key="idx"
-                class="option-btn"
-                :class="{
-                  'correct': showResult && option === currentExercise().answer,
-                  'incorrect': showResult && selectedOption === option && option !== currentExercise().answer,
-                  'selected': selectedOption === option
-                }"
-                @click="selectOption(option)"
-                :disabled="showResult"
-              >
-                {{ option }}
-              </button>
+            
+            <!-- Options as hints (not clickable) -->
+            <div class="options-hints">
+              <span class="hints-label">Options:</span>
+              <div class="hints-list">
+                <span 
+                  v-for="(option, idx) in currentExercise().options" 
+                  :key="idx"
+                  class="hint-option"
+                  :class="{ 'correct-hint': showResult && option === currentExercise().answer }"
+                >
+                  {{ option }}
+                </span>
+              </div>
             </div>
+            
+            <!-- Written answer section -->
+            <div class="write-answer-section">
+              <div class="write-answer-row">
+                <input 
+                  v-model="practiceAnswer" 
+                  type="text" 
+                  class="dashboard-input write-input"
+                  placeholder="Type your answer..."
+                  :disabled="showResult"
+                  @keyup.enter="submitWrittenAnswer"
+                />
+                <button 
+                  class="dashboard-btn submit-btn" 
+                  @click="submitWrittenAnswer"
+                  :disabled="showResult || !practiceAnswer.trim()"
+                >
+                  Submit
+                </button>
+              </div>
+            </div>
+            
             <div v-if="showResult" class="result-feedback" :class="isCorrect ? 'correct' : 'incorrect'">
-              {{ isCorrect ? 'Correct!' : `Incorrect. The answer was: ${currentExercise().answer}` }}
+              <div class="result-text">
+                {{ isCorrect ? 'Correct!' : `Incorrect. The answer was: ${currentExercise().answer}` }}
+              </div>
+              <button class="repeat-btn" @click="repeatSentence" title="Repeat audio">
+                🔊 Repeat
+              </button>
             </div>
             <div class="btn-group">
               <button class="dashboard-btn secondary" @click="goToMenu">Exit</button>
@@ -760,6 +818,15 @@ const copyExampleJson = async () => {
   text-align: center;
   margin: 16px 0;
   font-weight: 500;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.result-text {
+  flex: 1;
 }
 
 .result-feedback.correct {
@@ -770,6 +837,82 @@ const copyExampleJson = async () => {
 .result-feedback.incorrect {
   background-color: rgba(248, 113, 113, 0.15);
   color: #f87171;
+}
+
+/* Written Answer Section */
+.write-answer-section {
+  margin: 20px 0;
+  padding-top: 16px;
+  border-top: 1px solid var(--bg-tertiary);
+}
+
+.write-answer-row {
+  display: flex;
+  gap: 10px;
+}
+
+.write-input {
+  flex: 1;
+}
+
+.submit-btn {
+  flex: 0 0 auto;
+  padding: 12px 20px;
+}
+
+.submit-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Repeat Button */
+.repeat-btn {
+  background: transparent;
+  border: 1px solid currentColor;
+  border-radius: 6px;
+  padding: 6px 12px;
+  color: inherit;
+  cursor: pointer;
+  font-size: 0.9rem;
+  transition: background-color 0.2s ease;
+}
+
+.repeat-btn:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+/* Options Hints */
+.options-hints {
+  margin-bottom: 20px;
+  text-align: center;
+}
+
+.hints-label {
+  display: block;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  margin-bottom: 8px;
+}
+
+.hints-list {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.hint-option {
+  padding: 8px 16px;
+  background-color: var(--bg-tertiary);
+  border-radius: 6px;
+  color: var(--text-secondary);
+  font-size: 0.95rem;
+  transition: all 0.2s ease;
+}
+
+.hint-option.correct-hint {
+  background-color: rgba(74, 222, 128, 0.2);
+  color: #4ade80;
 }
 
 /* Results View */

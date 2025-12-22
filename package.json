@@ -1,0 +1,11 @@
+{
+    "name": "mi-proyecto",
+    "private": true,
+    "devDependencies": {
+        "concurrently": "^8.2.2"
+    },
+    "scripts": {
+        "dev": "concurrently -n FRONT,BACK \"npm --prefix frontend run dev\" \"npm --prefix backend run dev\"",
+        "install:all": "npm --prefix frontend install && npm --prefix backend install"
+    }
+}
